@@ -1,0 +1,225 @@
+---
+title: "FinalProject2"
+author: "Angela Lee"
+date: "Thursday, December 18, 2014"
+output: html_document
+---
+####Introduction
+Ballot design may affect the responses of voters and cause problems if, for example, format and style is inconsistent - much like how sample surveys may cause response bias or the way a question is phrased may sway the participant's answer. This is especially problematic if enough people's votes were affected to tip a presidential vote. A case arose in the 2000 US presidential election when Palm Beach County, Florida adopted a new ballot format; voters claimed to have mistakenly voted for Buchanan, the Reform party candidate, rather than Gore, the Democratic candidate. Such a claim is important to address in order to demonstrate the importance of ballot design and ensure that great care will be taken to curate accessibility and clarity in the ballots.
+
+####Methodology
+  Data was collected for the *ballot-level* election outcomes for Palm Beach, Florida, as well as *county-level* election outcomes for the US. The variables for the *ballot-level* outcomes includes the following: whether or not the *presidential vote* was cast for Buchanan, whether or not the *senatorial vote* was cast for Deckard (Reform), whether or not the *Senatorial vote* was cast for Nelson (Democrat), and whether or not the vote was absentee or on election day, and the number of ballots for each combination of these.
+  The variables to be examined for the *county-level* election outcomes include the number of votes cast for Buchanan; the total number of votes cast for all presidential candidates; the proportion of votes cast in the previous two elections for the Republicad candidate and for the Reform candidate; 2000 census county population, population density, percent of population in certain race categories(White, Black, Asian/Pacific Islander, Native American/Alaska Native, Hispanic), and 1990 median income.
+  How may one proceed to address the claim with the given data? To start, considering the following points may help assess the evidence as to whether Democratic voters mistakenly voted for Buchanan because of the ballot modification:
+1. Comparing the Palm Beach County votes with county votes across the US
+2. Comparing PBC support for Buchanan on election day with support on the absentee ballot, which did not use the ballot modification.
+  a. Was there anything unusual about Buchanan's support from certain precincts?
+3. Estimating the number of excess votes that Buchanan recieved from Democratic voters
+
+(Note: Some of the ballots were destroyed in the county-level data.)
+
+####Results
+After some preliminary analysis of the countyUS data, the covariance matrix is ill conditioned with a conditioning number over 10. Respecification of the model helped here.
+
+```{r, echo = FALSE, include = FALSE}
+load(url("http://www.stat.berkeley.edu/users/nolan/data/Projects/election.rda"))
+
+#delete the NAs
+countyUS = countyUS[-which(is.na(countyUS$prep92)),]
+
+#####################
+#Principal Components
+#####################
+c.prc = prcomp(countyUS[,c(5,7,10,13:17)], center = TRUE, scale. = TRUE)
+c.prc$rotation
+c.prc$sdev^2
+summary(c.prc)
+screeplot(c.prc, type = "l")
+c.prc$sdev[1] / c.prc$sdev[8]
+
+```
+
+
+```{r, echo=FALSE, include = FALSE, fig.width = c(3.5)}
+library(leaps)
+X = countyUS[,-c(1,2,4)]
+outs = leaps(x = X, y = countyUS$buchanan, int = FALSE, strictly.compatible = FALSE)
+#CP plot
+plot(outs$size, outs$Cp, xlab = "p",
+ylab = expression(C[p]),ylim=c(min(outs$Cp),median(outs$Cp)))
+abline(a = 0, b = 1, lty = 2, untf=TRUE)
+#The best model will be a 8-variable model
+
+abline(a = 0, b = 1, lty = 2, untf = TRUE)
+leaps = regsubsets(countyUS$buchanan ~ ., data = X, nbest = 8)
+summary(leaps)
+plot(leaps, scale="r2")
+leaps$variables
+glm_county = glm(buchanan ~ total + pop + density + pperot96 + pperot92 + prep96 + hispanic + prep92, data = countyUS)
+```
+
+The best model includes 8 variables: total, pop, density, pperot96, pperot92, prep96, hispanic, prep92. Checking the collinearity again:
+
+```{r, echo=FALSE, include=FALSE, fig.width = c(3,5)}
+c.prc = prcomp(countyUS[,c(5,7,10,13:17)], center = TRUE, scale. = TRUE)
+c.prc$rotation
+c.prc$sdev^2
+summary(c.prc)
+c.prc$sdev[1] / c.prc$sdev[8]
+```
+```{r, echo=FALSE, fig.width = c(3,5)}
+screeplot(c.prc, type = "l")
+```
+
+Taking the ratio of the largest to smallest eigenvalue,
+
+$\sqrt {\lambda_1\over\lambda_k} = $ `r c.prc$sdev[1] / c.prc$sdev[8]`
+
+this is less than 10, which means the covariance matrix is not ill-conditioned (regression coefficients are stable and small changes in the data produce small changes in the solution).
+
+
+The next plot shows some high leverage points. We remove these points refit the model
+
+```{r, echo = FALSE, fig.width=c(3,5)}
+plot(glm_county, 5)
+dfModel = 9
+covratioVals = covratio(glm_county)
+#plot(covratioVals)
+covratioCO = (3*dfModel/nrow(countyUS))
+abline(h = c(1 - covratioCO, 1 + covratioCO))
+
+
+glm_inf = influence.measures(glm_county)
+#summary(glm_inf) 
+inf = which(apply(glm_inf$is.inf, 1, any)) 
+
+countySub = countyUS[-inf,]
+
+glm_countySub = glm(buchanan ~ total + pop + density + pperot96 + pperot92 + prep96 + hispanic + prep92, family = "poisson", data = countySub)
+
+#summary(glm_countySub)
+
+```
+
+
++---------------+---------------+--------------------+
+|Variable       | Mean          | Std. Error         |
++===============+===============+====================+
+| Intecept      | 3.547+00      | 1.404e-02          |
++---------------+---------------+--------------------+
+| total         | 7.562e-06     | 1.590e-07          |
++---------------+---------------+--------------------+
+| pop           | 6.456e-06     | 6.388e-08          |
++---------------+---------------+--------------------+
+| density       |-1.160e-04     | 5.197e-06          |
++---------------+---------------+--------------------+
+| pperot96      |-3.278e+00     | 1.109e-01          |
++---------------+---------------+--------------------+
+| pperot92      | 6.874e+00     | 6.247e-02          |
++---------------+---------------+--------------------+
+| prep96        |-6.225e+00     | 5.979e-02          |
++----------------------------------------------------+
+| hispanic      |-1.170e-02     | 2.770e-04          |
++---------------+---------------+--------------------+
+| prep92        | 6.112e+00     | 6.642e-02          |
++----------------------------------------------------+
+
+Table: The table of coefficients for the model for the countyUS data is displayed, with Residual Deviance of 159759 on 2826 degrees of freedom.
+
+We see that the proportion of votes cast in the previous two elections had quite an effect in the presidential vote outcome. the proportion of Reform votes in 1992 had multiplicative effect of $\exp {6.874e+00} $ which resulted in an average increase of 966.8 on expected votes, holding the other variables constant.
+
+
+#####Palm Beach County Data
+```{r, echo=FALSE, include=FALSE}
+#######################
+#Constructing the model
+#######################
+
+factor(ballotPBC$isabs)
+
+glm_PBC_full = glm(ibuchanan ~ ideckard + inelson + isabs + Freq + inelson:isabs + ideckard:isabs + Freq:isabs, family = "binomial", data = ballotPBC)
+summary(glm_PBC_full)
+
+glm_PBC_1 = glm(ibuchanan ~ ideckard + inelson + isabs + Freq + inelson:isabs + Freq:isabs, family = "binomial", data = ballotPBC)
+summary(glm_PBC_1)
+anova.glm(glm_PBC_1,glm_PBC_full, test = "Chisq")
+
+
+glm_PBC_2 = glm(ibuchanan ~ ideckard + inelson + Freq, family = "binomial", data = ballotPBC)
+summary(glm_PBC_2)
+anova.glm(glm_PBC_2, glm_PBC_1, test = "Chisq")
+```
+
+The analysis of deviance table below confirms that there is sufficient evidence that the absentee ballot, which did not use the ballot modification, significantly reduces the odds of voting for Buchanan. Our full model includes the senatorial votes, absentee/election day ballot, frequency, and interaction between absentee and senatorial vote for Nelson and frequency. The second model omits absentee and its interaction between senatorial votes.
+
+
+Analysis of deviance table
+
+
++---------------+----------------+--------------------+------------+
+|Model          |Resid. Deviance | Degrees of Freedom | P(>Chi)    |
++===============+================+====================+============+
+|1              | 905.44         |                    |            |
++---------------+----------------+--------------------+------------+
+|2              | 788.28         | 3                  | 2.2e-16    |
++---------------+----------------+--------------------+------------+
+
+Table: Model 1 includes the absentee dummy variable and its interaction with senatorial votes. Model 2, obeying Principal of Marginality, omits the interactions and absentee dummy variable.
+
+
+#####CountPBC Model 
+
++---------------+---------------+--------------------+
+|Variable       | Mean          | Std. Error         |
++===============+===============+====================+
+| Intecept      | 2.941         | 0.209              |
++---------------+---------------+--------------------+
+| Deckard       |-4.417         | 0.247              |
++---------------+---------------+--------------------+
+| Nelson        | 1.555         | 0.326              |
++---------------+---------------+--------------------+
+| Absentee      | 1.199         | 0.409              |
++---------------+---------------+--------------------+
+| Frequency     |-0.206         | 0.019              |
++---------------+---------------+--------------------+
+| Nelson:Abs    |-2.526         | 0.598              |
++---------------+---------------+--------------------+
+| Freq:Abs      |-0.813         | 0.589              |
++----------------------------------------------------+
+
+
+Residual deviance: 788.28 on 2390 df  
+
+Table: The table above displays coefficients for modeling presidential vote outcome.
+
+The odds of support for Buchannan *decreases* by $\exp {-2.526} $ = 0.15 for those who vote for Democratic senatorial candidate Nelson as a senatorial candidate within absentee ballot.
+
+The odds of support for Buchanan *decreases* overall by $\exp {-1.970} $ = .139 within absentee ballot.
+
+This prompts the question, did Buchanan's support in PBC come from precincts that were highly democratic? The table below displays the possible combinations for voting presidential and senatorial candidate, and the number of precincts that voted in those combinations; in particular the ones with support for Buchanan. We are interested in the support for Buchanan - notice that the number of precincts who voted for a Reform senatorial candidate and voted for Buchanan was 56, whereas the number of precincts who voted for Democratic senatorial candidate and voted for Buchanan was 419. This significant difference suggests Buchanan's support in PBC came from precincts that were highly Democratic; moreover there was a large number of precincts who supported other senatorial candidates (non-Reform, non-Democratic) and voted for Buchanan.
+
++----------------+----------------+---------------+
+|Buchanan/Nelson |Buchanan/Deckard|Buchan/Neither |         
++================+================+===============+
+|419             | 56             | 358           | 
++----------------+----------------+---------------+
+
+```{r, echo = FALSE, include = FALSE}
+######################################
+#Creating a variable for combinations
+######################################
+
+ballotPBC$combo = 0
+ballotPBC$combo[which((ballotPBC$ibuchanan == 1) & (ballotPBC$inelson == 1))] = "R.D"
+ballotPBC$combo[which((ballotPBC$ibuchanan == 1) & (ballotPBC$ideckard == 1))] = "R.R"
+ballotPBC$combo[which((ballotPBC$ibuchanan == 1) & (ballotPBC$inelson == 0) & ballotPBC$ideckard == 0)] = "R.N"
+ballotPBC$combo[which((ballotPBC$ibuchanan == 0) & (ballotPBC$inelson == 1))] = "NR.D"
+ballotPBC$combo[which((ballotPBC$ibuchanan == 0) & (ballotPBC$ideckard == 1))] = "NR.R"
+ballotPBC$combo[which((ballotPBC$ibuchanan == 0) & (ballotPBC$inelson == 0) & (ballotPBC$ideckard == 0))] = "NONE"
+ballotPBC$combo
+
+table(ballotPBC$combo)
+```
+
+####Discussion
+After comparing models, county-level and ballot-level, there is sufficient evidence that suggests that the outcome of presidential votes in Palm Beach County, Florida was affected by the new ballot format. This stressed the importance of accessibility, clarity, and consistency in the ballot format.

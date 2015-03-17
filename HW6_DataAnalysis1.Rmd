@@ -1,0 +1,184 @@
+---
+title: "Nesting Horseshoe Crabs"
+author: "Angela Lee"
+date: "Saturday, November 29, 2014"
+output: html_document
+---
+###Introduction
+
+To investigate the factors that affect whether there were any satellites residing nearby the female crabs' nest, we examine the categorical (dichotomous) response variable, satellite, affected by both qualitative and quantitative variables. 
+We will look at the following variables: crabs shell width (cm), weight (grams); color (ranging over 1: light, 2: medium light, 3: medium, 4: medium dark, and 5: dark); and spine condition (1: both good, 2: one worn or broken, 3: both worn or broken).
+
+###Methodology
+Included in our data is the response variable, the number of satellites nearby the female crab's nest. We will convert the satellite variable into an indicator as to whether there are any satellites nearby the female crab, giving us a dichotomous response variable. Examining the following points will lead us to a generalized linear model:
+
+1. Preliminary analysis of the predictor variables
+2. Analysis of a full model including two-way interaction terms and comparisons of residual deviance to test several models while obeying the principal of marginality. (To simplify, we will consider the color variable as an indicator of whether it is dark)
+3. Examination of standardized Pearson residual plots for two-three competing models
+
+###Results
+
+```{r, include = FALSE}
+horseshoe = read.table("http://www.stat.berkeley.edu/users/nolan/data/horseshoe.txt", header = T)
+horseshoe$sat = 0 + (as.numeric(horseshoe$sat) >= 1)
+```
+
+####Preliminary Analysis of the Predictor Variables
+
+Influential points are displayed below
+
+```{r, fig.width=c(4,5)}
+plot(glm_full, 5)
+#horseshoe[which(cooks_dist > cutoff),]
+oppp = par(mfrow = c(1,2))
+
+glm_inf = influence.measures(glm_full)
+#summary(glm_inf)
+which(apply(glm_inf$is.inf, 1, any))
+
+
+
+```
+
+Below is a table of correlation between the predictor variables. The quantitative variables, width and weight, are highly correlated, which prompts us to further conduct an analysis of principal components to explicate the correlational structure of the explanatory variables.
+
+
+```{r}
+cor(horseshoe[,-4])
+```
+We will look at a principal components analysis to determine whether or not the covariance matrix is ill-conditioned. The plot below confirms that the first principal component accounts for the maximum collective variation in the standardized regressor.
+```{r, include = FALSE}
+h.prc = prcomp(horseshoe[,-4], center = TRUE, scale. = TRUE)
+h.prc$rotation
+h.prc$sdev^2
+summary(h.prc)
+```
+
+```{r, fig.width= c(3,4)}
+screeplot(h.prc, type = "l")
+```
+
+The relative size of the eigenvalues indicates the degree of collinearity. We examine the condition number, taking the ratio of the largest to smallest eigenvalue:
+
+$\sqrt {\lambda_1\over\lambda_k} = $ `r h.prc$sdev[1] / h.prc$sdev[4]`
+
+which is less than 10, which means the covariance matrix is not ill-conditioned (regression coefficients are stable and small changes in the data produce small changes in the solution). We may proceed to test some models.
+
+```{r}
+h.prc$sdev[1] / h.prc$sdev[4]
+```
+
+####Model Selection
+We start off with the full model, with all the two-way interactions. By comparing the residual deviances of models with ANOVA, obeying the principal of marginality, our model narrows down to two explanatory variables - color and weight.
+[MAIN EFFECTS SUFFICIENT]
+```{r, echo = FALSE, include = FALSE}
+horseshoe$color = 0 + (horseshoe$color == 5)
+horseshoe$spine = factor(horseshoe$spine)
+
+
+glm_full = glm(sat ~ (color + spine + width + weight)^2, data = horseshoe, family = "binomial")
+summary(glm_full)
+
+glm_1 = glm(sat ~ (color + spine + width + weight)^2 - spine:color, data = horseshoe, family = "binomial")
+anova.glm(glm_1,glm_full, test = "Chisq")
+summary(glm_1)
+
+glm_2 = glm(sat ~ (color + spine + width + weight)^2 - spine:color - color:width, data = horseshoe, family = "binomial")
+anova.glm(glm_2,glm_1, test = "Chisq")
+summary(glm_2)
+
+glm_3 = glm(sat ~ (color + spine + width + weight)^2 - spine:color - color:width - spine:width, data = horseshoe, family = "binomial")
+anova.glm(glm_3,glm_2, test = "Chisq")
+summary(glm_3)
+
+glm_4 = glm(sat ~ (color + spine + width + weight)^2 - spine:color - color:width - spine:width - spine:weight, data = horseshoe, family = "binomial")
+anova.glm(glm_4,glm_3, test = "Chisq")
+summary(glm_4)
+
+glm_5 = glm(sat ~ (color + spine + width + weight)^2 - spine:color - color:width - spine:width - spine:weight - spine, data = horseshoe, family = "binomial")
+anova.glm(glm_5,glm_4, test = "Chisq")
+summary(glm_5)
+
+glm_6 = glm(sat ~ (color + spine + width + weight)^2 - spine:color - color:width - spine:width - spine:weight - spine - width:weight, data = horseshoe, family = "binomial")
+anova.glm(glm_6, glm_5, test = "Chisq")
+summary(glm_6)  
+
+glm_7 = glm(sat ~ (color + spine + width + weight)^2 - spine:color - color:width - spine:width - spine:weight - spine - width:weight - width, data = horseshoe, family = "binomial")
+anova.glm(glm_7,glm_6, test = "Chisq")
+summary(glm_7)
+```
+
+```{r, echo=FALSE}
+glm_8 = glm(sat ~ (color + spine + width + weight)^2 - spine:color - color:width - spine:width - spine:weight - spine - width:weight - width - color:weight, data = horseshoe, family = "binomial")
+anova.glm(glm_8,glm_7, test = "Chisq")
+summary(glm_8)
+
+competitive_model1 = glm(sat ~ color + weight + color:weight, data = horseshoe, family = "binomial")
+#summary(competitive_model1)
+
+competitive_model2 = glm(sat ~ color + width, data = horseshoe)
+summary(competitive_model2)
+
+resid.dev = matrix(cbind(anova.glm(glm_4,glm_3, test = "Chisq")$"Resid. Dev",
+anova.glm(glm_5,glm_4, test = "Chisq")$"Resid. Dev",
+anova.glm(glm_6,glm_5, test = "Chisq")$"Resid. Dev",
+anova.glm(glm_7,glm_6, test = "Chisq")$"Resid. Dev",
+anova.glm(glm_8,glm_7, test = "Chisq")$"Resid. Dev" ), nrow = 2, ncol = 5 )
+colnames(resid.dev) = c("glm_8 vs. glm_7", "glm_7 vs. glm_6", "glm_6 vs. glm_5", "glm_5 vs. glm_4", "glm_4 vs. glm_3")
+
+
+terms_dropped = c("spine:color, color width, spine:width", "spine:weight", "spine", "width:weight", "width", "color:weight")
+df.2 = rbind(summary(glm_3)$df[2], summary(glm_4)$df[2], summary(glm_5)$df[2], summary(glm_6)$df[2], summary(glm_7)$df[2], summary(glm_8)$df[2])
+resdev =rbind(summary(glm_3)$deviance, summary(glm_4)$deviance, summary(glm_5)$deviance, summary(glm_6)$deviance, summary(glm_7)$deviance, summary(glm_8)$deviance)
+```
+
+The table of residual deviances below summarizes the model selection process.
+```{r}
+resid.dev = data.frame(cbind(terms_dropped, df.2, resdev))
+
+
+
+colnames(resid.dev) = c("Terms Dropped", "Degrees of Freedom", "Degrees Residual Deviance") 
+rownames(resid.dev) = c("Model 1", "Model 2", "Model 3", "Model 4", "Model 5", "Model 6")
+
+resid.dev
+
+```
+
+Below are standardized Pearson residual plots for some competing models. We convert the quantitative variables, width and weight, into categorical variables;  Weight is split into the following categories: 1: 1200-2000; 2: 2000-3000, 3: 3000-4000; 0 (baseline): 5000+.
+
+There are some slight differences in these plots. For small fitted values, the first model, sat ~ color + weight, has comparatively smaller residuals than the competing models. This helps us confirm that this is our best model.
+
+
+```{r}
+horseshoe$width = round(horseshoe$width)
+breaks = c(21, seq(23,29, by = 1), 34)
+width = cut(horseshoe$width, breaks = breaks)
+
+
+horseshoe$weight[which((horseshoe$weight >= 1200) & (horseshoe$weight < 2000))] = 1
+horseshoe$weight[which((horseshoe$weight >= 2000) & (horseshoe$weight < 3000))] = 2
+horseshoe$weight[which((horseshoe$weight >= 3000) & (horseshoe$weight < 4000))] = 
+3
+horseshoe$weight[which((horseshoe$weight > 5000))] = 0
+invisible(factor(horseshoe$weight))
+
+
+glm_cat = glm(sat ~ color + weight, data = horseshoe)
+glm_cat2 = glm(sat ~ color + weight + color:weight, data = horseshoe)
+glm_cat3 = glm(sat ~ color + width, data = horseshoe)
+```
+
+
+```{r}
+op = par(mfrow = c(1,3), mar = c(4,4,1,1))
+plot(y = residuals(glm_cat, type = "pearson"), x = fitted(glm_cat), ylim = c(-1,1), xlab = "fitted values", ylab = "std pearson residuals", main = "sat ~ color + weight")
+
+plot(y = residuals(glm_cat2, type = "pearson"), x = fitted(glm_cat2), ylim = c(-1,1), xlim = c(0,1), xlab = "fitted values", ylab = "std pearson residuals", main = "sat ~ color + weight + color:weight")
+
+plot(y = residuals(glm_cat3, type = "pearson"), x = fitted(glm_cat3), ylim = c(-1,1), xlim = c(0,1), xlab = "fitted values", ylab = "pearson residuals", main = "sat ~ color + width")
+
+```
+
+###Summary
+After confirming the coefficients are stable, we tested some models by starting with the full generalized linear model with two-way interaction, dropping the terms based on the highest p-value, while obeying the principal of marginality, until all the coefficients were significant. Comparing a few competitive models, the mode sat ~ color + weight seems to be the best one. 
